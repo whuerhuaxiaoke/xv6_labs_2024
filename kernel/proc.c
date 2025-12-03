@@ -14,6 +14,7 @@ struct proc *initproc;
 
 int nextpid = 1;
 struct spinlock pid_lock;
+static struct proc *idleproc;
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
@@ -36,6 +37,8 @@ static struct {
   struct prio_queue q[NPRIO];  // 每个优先级一个队列：0..31
   int highest_nonempty;        // 当前非空队列的最高优先级（最小数字）
 } runq;
+
+static void idle_loop(void) __attribute__((noreturn));
 
 void
 proc_mapstacks(pagetable_t kpgtbl)
@@ -69,6 +72,21 @@ procinit(void)
   sem_table_init();                   // 初始化全局信号量表
   extern void rw_table_init(void);
   rw_table_init();
+
+  // create a dedicated idle process used when no user process is runnable.
+  idleproc = allocproc();
+  if(idleproc == 0)
+    panic("idleproc");
+
+  safestrcpy(idleproc->name, "idle", sizeof(idleproc->name));
+  idleproc->state = RUNNABLE;
+  idleproc->prio = PRIO_MAX;
+  idleproc->base_prio = PRIO_MAX;
+  idleproc->wait_ticks = 0;
+  idleproc->rq_next = 0;
+  idleproc->context.ra = (uint64)idle_loop;
+  idleproc->context.sp = idleproc->kstack + PGSIZE;
+  release(&idleproc->lock);
 }
 void
 prio_init(void)
@@ -128,13 +146,6 @@ void prio_enqueue(struct proc *p)
   p->wait_ticks = 0;
   rq_push_tail(p->prio, p);
   release(&runq.lock);
-
-  // 抢占检查：如果此进程优先级更高，触发当前 CPU 让出
-  struct proc *cur = myproc();
-  if (cur && cur->state == RUNNING && p->prio < cur->prio) {
-    // 强制让出 CPU
-    yield();
-  }
 }
 
 
@@ -606,56 +617,99 @@ scheduler(void)
 {
   struct cpu *c = mycpu();
 
-  c->proc = 0;
-  for(;;){
-    intr_on();
-
-    struct proc *p = prio_pick_next(); // 从最高优先级非空队列取一个
-    if (p == 0) {
-      // 没有就绪进程：当前 CPU 忙等或省电（保持原逻辑即可）
-      continue;
-    }
-
-    acquire(&p->lock);
-    if (p->state != RUNNABLE) {
-      // 极端情况下刚被别人拿走或状态改变了，放弃本次
-      release(&p->lock);
-      continue;
-    }
-    p->state = RUNNING;
-    p->wait_ticks = 0;  // 离开队列，等待计数清零
-    c->proc = p;
-    swtch(&c->context, &p->context);
-    c->proc = 0;
-    release(&p->lock);
-  }
+  c->proc = idleproc;
+  idleproc->state = RUNNING;
+  idleproc->wait_ticks = 0;
+  swtch(&c->context, &idleproc->context);
+  panic("scheduler returned");
 }
 
-// Switch to scheduler.  Must hold only p->lock
-// and have changed proc->state. Saves and restores
-// intena because intena is a property of this
-// kernel thread, not this CPU. It should
-// be proc->intena and proc->noff, but that would
-// break in the few places where a lock is held but
-// there's no process.
+static void
+pick_next(struct proc *cur, struct proc **out)
+{
+  struct proc *candidate = prio_pick_next();
+  if(candidate == 0)
+    candidate = idleproc;
+
+  if(candidate == idleproc){
+    *out = idleproc;
+    return;
+  }
+
+  if(candidate == cur){
+    *out = cur;
+    return;
+  }
+
+  acquire(&candidate->lock);
+  if(candidate->state != RUNNABLE && candidate != idleproc){
+    release(&candidate->lock);
+    *out = 0;
+    return;
+  }
+  *out = candidate;
+}
+
+void
+schedule(void)
+{
+  struct proc *p = myproc();
+  struct proc *next = 0;
+  int intena = intr_get();
+  intr_off();
+
+  if(!holding(&p->lock))
+    panic("schedule p->lock");
+
+  while(next == 0){
+    pick_next(p, &next);
+  }
+
+  if(next == p){
+    p->state = RUNNING;
+    p->wait_ticks = 0;
+    mycpu()->proc = p;
+    mycpu()->intena = intena;
+    if(intena)
+      intr_on();
+    return;
+  }
+
+  next->state = RUNNING;
+  next->wait_ticks = 0;
+  mycpu()->proc = next;
+
+  release(&p->lock);
+  swtch(&p->context, &next->context);
+
+  if(!holding(&p->lock))
+    panic("schedule return p->lock");
+
+  mycpu()->intena = intena;
+  if(intena)
+    intr_on();
+}
+
 void
 sched(void)
 {
-  int intena;
+  schedule();
+}
+
+static void
+idle_loop(void)
+{
   struct proc *p = myproc();
 
-  if(!holding(&p->lock))
-    panic("sched p->lock");
-  if(mycpu()->noff != 1)
-    panic("sched locks");
-  if(p->state == RUNNING)
-    panic("sched running");
-  if(intr_get())
-    panic("sched interruptible");
-
-  intena = mycpu()->intena;
-  swtch(&p->context, &mycpu()->context);
-  mycpu()->intena = intena;
+  acquire(&p->lock);
+  for(;;){
+    p->state = RUNNING;
+    p->wait_ticks = 0;
+    intr_on();
+    asm volatile("wfi");
+    intr_off();
+    schedule();
+  }
 }
 
 // Give up the CPU for one scheduling round.
