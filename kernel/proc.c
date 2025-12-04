@@ -798,14 +798,19 @@ idle_loop(void)
 {
   struct proc *p = myproc();
 
-  acquire(&p->lock);
   for(;;){
+    acquire(&p->lock);
     p->state = RUNNING;
     p->wait_ticks = 0;
+    release(&p->lock);
+
     intr_on();
     asm volatile("wfi");
     intr_off();
+
+    acquire(&p->lock);
     schedule();
+    release(&p->lock);
   }
 }
 
