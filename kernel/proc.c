@@ -15,7 +15,7 @@ struct proc *initproc;
 
 int nextpid = 1;
 struct spinlock pid_lock;
-static struct proc *idleproc;
+static struct proc *idleprocs[NCPU];
 
 extern void forkret(void);
 static struct proc* allocproc(void);
@@ -46,6 +46,16 @@ static struct {
 } schedstat;
 
 static void idle_loop(void) __attribute__((noreturn));
+
+static int
+is_idleproc(struct proc *p)
+{
+  for(int i = 0; i < NCPU; i++) {
+    if(idleprocs[i] == p)
+      return 1;
+  }
+  return 0;
+}
 
 void
 proc_mapstacks(pagetable_t kpgtbl)
@@ -81,20 +91,25 @@ procinit(void)
   extern void rw_table_init(void);
   rw_table_init();
 
-  // create a dedicated idle process used when no user process is runnable.
-  idleproc = allocproc();
-  if(idleproc == 0)
-    panic("idleproc");
+  // create per-CPU idle processes used when no user process is runnable.
+  for(int i = 0; i < NCPU; i++) {
+    struct proc *idle = allocproc();
+    if(idle == 0)
+      panic("idleproc");
 
-  safestrcpy(idleproc->name, "idle", sizeof(idleproc->name));
-  idleproc->state = RUNNABLE;
-  idleproc->prio = PRIO_MAX;
-  idleproc->base_prio = PRIO_MAX;
-  idleproc->wait_ticks = 0;
-  idleproc->rq_next = 0;
-  idleproc->context.ra = (uint64)idle_loop;
-  idleproc->context.sp = idleproc->kstack + PGSIZE;
-  release(&idleproc->lock);
+    safestrcpy(idle->name, "idle", sizeof(idle->name));
+    idle->state = RUNNABLE;
+    idle->prio = PRIO_MAX;
+    idle->base_prio = PRIO_MAX;
+    idle->wait_ticks = 0;
+    idle->rq_next = 0;
+    idle->context.ra = (uint64)idle_loop;
+    idle->context.sp = idle->kstack + PGSIZE;
+    release(&idle->lock);
+
+    idleprocs[i] = idle;
+    cpus[i].idle = idle;
+  }
 }
 void
 prio_init(void)
@@ -202,7 +217,7 @@ setpriority(int pid, int prio)
   int old = -1;
   for(struct proc *p = proc; p < &proc[NPROC]; p++){
     acquire(&p->lock);
-    if(p->pid == pid && p->state != UNUSED && p != idleproc){
+    if(p->pid == pid && p->state != UNUSED && !is_idleproc(p)){
       old = p->prio;
       if(p->state == RUNNABLE)
         prio_dequeue(p);
@@ -678,23 +693,25 @@ void
 scheduler(void)
 {
   struct cpu *c = mycpu();
+  struct proc *idle = c->idle;
 
-  c->proc = idleproc;
-  idleproc->state = RUNNING;
-  idleproc->wait_ticks = 0;
-  swtch(&c->context, &idleproc->context);
+  c->proc = idle;
+  idle->state = RUNNING;
+  idle->wait_ticks = 0;
+  swtch(&c->context, &idle->context);
   panic("scheduler returned");
 }
 
 static void
 pick_next(struct proc *cur, struct proc **out)
 {
+  struct proc *idle = mycpu()->idle;
   struct proc *candidate = prio_pick_next();
   if(candidate == 0)
-    candidate = idleproc;
+    candidate = idle;
 
-  if(candidate == idleproc){
-    *out = idleproc;
+  if(candidate == idle){
+    *out = idle;
     return;
   }
 
@@ -704,7 +721,7 @@ pick_next(struct proc *cur, struct proc **out)
   }
 
   acquire(&candidate->lock);
-  if(candidate->state != RUNNABLE && candidate != idleproc){
+  if(candidate->state != RUNNABLE && candidate != idle){
     release(&candidate->lock);
     *out = 0;
     return;
@@ -719,6 +736,8 @@ schedule(void)
   struct proc *next = 0;
   int intena = intr_get();
   intr_off();
+  struct cpu *c = mycpu();
+  struct proc *idle = c->idle;
 
   if(!holding(&p->lock))
     panic("schedule p->lock");
@@ -734,14 +753,14 @@ schedule(void)
   if(next == p){
     p->state = RUNNING;
     p->wait_ticks = 0;
-    mycpu()->proc = p;
-    mycpu()->intena = intena;
+    c->proc = p;
+    c->intena = intena;
     if(intena)
       intr_on();
     return;
   }
 
-  if(next == idleproc){
+  if(next == idle){
     acquire(&schedstat.lock);
     schedstat.stats.idle_runs++;
     release(&schedstat.lock);
@@ -755,7 +774,7 @@ schedule(void)
 
   next->state = RUNNING;
   next->wait_ticks = 0;
-  mycpu()->proc = next;
+  c->proc = next;
 
   release(&p->lock);
   swtch(&p->context, &next->context);
@@ -763,7 +782,7 @@ schedule(void)
   if(!holding(&p->lock))
     panic("schedule return p->lock");
 
-  mycpu()->intena = intena;
+  c->intena = intena;
   if(intena)
     intr_on();
 }
