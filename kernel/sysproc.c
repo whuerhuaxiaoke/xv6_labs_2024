@@ -7,6 +7,7 @@
 #include "proc.h"
 #include "semaphore.h"
 #include "rwlock.h"
+#include "schedstat.h"
 
 // rwlock syscalls
 uint64 sys_rw_init(void){
@@ -172,4 +173,38 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_setpriority(void)
+{
+  int pid, prio;
+  if(argint(0, &pid) < 0 || argint(1, &prio) < 0)
+    return -1;
+  return setpriority(pid, prio);
+}
+
+uint64
+sys_getpriority(void)
+{
+  int pid;
+  if(argint(0, &pid) < 0)
+    return -1;
+  return getpriority(pid);
+}
+
+uint64
+sys_schedstat(void)
+{
+  uint64 addr;
+  struct sched_stats snap;
+
+  if(argaddr(0, &addr) < 0)
+    return -1;
+
+  sched_snapshot(&snap);
+  if(copyout(myproc()->pagetable, addr, (char *)&snap, sizeof(snap)) < 0)
+    return -1;
+
+  return 0;
 }

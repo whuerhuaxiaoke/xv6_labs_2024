@@ -197,9 +197,10 @@ UPROGS=\
 	$U/_zombie\
 	$U/_kpgtbl\
 	$U/_bttest\
-	$U/_prio_test\
-	$U/_readwrite\
-	$U/_prodcons
+        $U/_prio_test\
+        $U/_schedtests\
+        $U/_readwrite\
+        $U/_prodcons
 ifeq ($(LAB),syscall)
 UPROGS += \
 	$U/_attack\

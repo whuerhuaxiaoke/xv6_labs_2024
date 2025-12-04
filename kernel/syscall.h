@@ -43,3 +43,6 @@
 #define SYS_rw_runlock 40
 #define SYS_rw_wlock   41
 #define SYS_rw_wunlock 42
+#define SYS_setpriority 43
+#define SYS_getpriority 44
+#define SYS_schedstat   45

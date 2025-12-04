@@ -3,6 +3,7 @@ typedef unsigned long size_t;
 typedef long int off_t;
 #endif
 struct stat;
+struct sched_stats;
 
 // system calls
 int fork(void);
@@ -26,6 +27,9 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int setpriority(int pid, int prio);
+int getpriority(int pid);
+int schedstat(struct sched_stats *out);
 #ifdef LAB_NET
 int bind(uint32);
 int unbind(uint32);

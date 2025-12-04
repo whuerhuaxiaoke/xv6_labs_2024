@@ -112,6 +112,9 @@ extern uint64 sys_rw_rlock(void);
 extern uint64 sys_rw_runlock(void);
 extern uint64 sys_rw_wlock(void);
 extern uint64 sys_rw_wunlock(void);
+extern uint64 sys_setpriority(void);
+extern uint64 sys_getpriority(void);
+extern uint64 sys_schedstat(void);
 #ifdef LAB_NET
 extern uint64 sys_bind(void);
 extern uint64 sys_unbind(void);
@@ -155,6 +158,9 @@ static uint64 (*syscalls[])(void) = {
 [SYS_rw_runlock] sys_rw_runlock,
 [SYS_rw_wlock]   sys_rw_wlock,
 [SYS_rw_wunlock] sys_rw_wunlock,
+[SYS_setpriority] sys_setpriority,
+[SYS_getpriority] sys_getpriority,
+[SYS_schedstat]   sys_schedstat,
 #ifdef LAB_NET
 [SYS_bind] sys_bind,
 [SYS_unbind] sys_unbind,
