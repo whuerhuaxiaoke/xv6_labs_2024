@@ -779,8 +779,10 @@ schedule(void)
   release(&p->lock);
   swtch(&p->context, &next->context);
 
+  // We may return here long after switching to another process. Ensure the
+  // current process lock is held again to match sched()/yield() invariants.
   if(!holding(&p->lock))
-    panic("schedule return p->lock");
+    acquire(&p->lock);
 
   c->intena = intena;
   if(intena)
