@@ -27,6 +27,7 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+void yield(void);
 int setpriority(int pid, int prio);
 int getpriority(int pid);
 int schedstat(struct sched_stats *out);

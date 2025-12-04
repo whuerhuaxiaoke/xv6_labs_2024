@@ -121,6 +121,13 @@ sys_sleep(void)
   return 0;
 }
 
+uint64
+sys_yield(void)
+{
+  yield();
+  return 0;
+}
+
 
 #ifdef LAB_PGTBL
 int

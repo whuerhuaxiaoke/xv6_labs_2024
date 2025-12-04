@@ -103,6 +103,7 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
+extern uint64 sys_yield(void);
 extern uint64 sys_sem_init(void);
 extern uint64 sys_sem_wait(void);
 extern uint64 sys_sem_signal(void);
@@ -150,6 +151,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_yield]   sys_yield,
 [SYS_sem_init]   sys_sem_init,
 [SYS_sem_wait]   sys_sem_wait,
 [SYS_sem_signal] sys_sem_signal,

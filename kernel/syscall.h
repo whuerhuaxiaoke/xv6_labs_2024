@@ -46,3 +46,4 @@
 #define SYS_setpriority 43
 #define SYS_getpriority 44
 #define SYS_schedstat   45
+#define SYS_yield       46
