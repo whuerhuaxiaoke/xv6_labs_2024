@@ -18,6 +18,7 @@ struct spinlock pid_lock;
 static struct proc *idleproc;
 
 extern void forkret(void);
+static struct proc* allocproc(void);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
